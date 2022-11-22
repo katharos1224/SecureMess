@@ -117,25 +117,33 @@ class LoginViewController: UIViewController {
         }
         
         // Firebase Log In Method
-        FirebaseAuth.Auth.auth().signIn(withEmail: email, password: password, completion: { [weak self] authResult, error in
-            
+        
+        DatabaseManager.shared.userExists(with: email, completion: { [weak self] exists in
             guard let strongSelf = self else {
                 return
             }
-            guard let result = authResult, error == nil else {
-                print("Failedto log in user with email: \(email)" )
+            guard !exists else {
+                //user already exsists
+                strongSelf.alertUserLoginError(message: "Looks like a user account for that email address already exsists!")
                 return
             }
             
-            let user = result.user
-            print("Logged in user \(user)")
-            
-            strongSelf.navigationController?.dismiss(animated: true, completion: nil)
+            FirebaseAuth.Auth.auth().signIn(withEmail: email, password: password, completion: { authResult, error in
+                guard let result = authResult, error == nil else {
+                    print("Failedto log in user with email: \(email)" )
+                    return
+                }
+                
+                let user = result.user
+                print("Logged in user \(user)")
+                
+                strongSelf.navigationController?.dismiss(animated: true, completion: nil)
+            })
         })
     }
     
-    func alertUserLoginError() {
-        let alert = UIAlertController(title: "Woops!", message: "Please enter all information to log in.", preferredStyle: .alert)
+    func alertUserLoginError(message: String = "Please enter all information to log in.") {
+        let alert = UIAlertController(title: "Woops!", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Dismiss", style: .cancel, handler: nil))
         present(alert, animated: true)
     }
