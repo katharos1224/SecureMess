@@ -7,8 +7,11 @@
 
 import UIKit
 import FirebaseAuth
+import JGProgressHUD
 
-class RegisterViewController: UIViewController {
+final class RegisterViewController: UIViewController {
+    
+    private let spinner = JGProgressHUD(style: .dark)
     
     private let scrollView: UIScrollView = {
         let scrollView = UIScrollView()
@@ -178,35 +181,70 @@ class RegisterViewController: UIViewController {
               let email = emailField.text,
               let password = passwordField.text,
               let confirmPass = confirmPasswordField.text,
-              !firstName.isEmpty, !lastName.isEmpty, !email.isEmpty, !password.isEmpty, password.count >= 6, confirmPass == password else {
+              !firstName.isEmpty, !lastName.isEmpty, !email.isEmpty, !password.isEmpty, !password.isEmpty, !confirmPass.isEmpty else {
             alertUserRegisterError()
             return
         }
         
-        // Firebase Register Method
-        
-        DatabaseManager.shared.userExists(with: email, completion: { [weak self] exists in
-            guard !exists else {
-                //user already exsists
-                self?.alertUserRegisterError(message: "")
-                return
-            }
-            
-            FirebaseAuth.Auth.auth().createUser(withEmail: email, password: password, completion: { [weak self] authResult, error in
-                
-                guard let strongSelf = self else {
-                    return
-                }
-                guard authResult != nil, error == nil else {
-                    print("Error creating user!")
+        if password.count < 6 {
+            alertUserRegisterError(message: "Password must be 6 or more characters!")
+        } else if confirmPass != password {
+            alertUserRegisterError(message: "Invalid confirmation password!")
+        } else {
+            spinner.show(in: view)
+            // Firebase Register Method
+            DatabaseManager.shared.userExists(with: email, completion: { [weak self] exists in
+                guard !exists else {
+                    //user already exsists
+                    self?.alertUserRegisterError(message: "Looks like a user account for that email address already exsists!")
+                    self?.spinner.dismiss()
                     return
                 }
                 
-                DatabaseManager.shared.insertUser(with: ChatAppUser(firstName: firstName, lastName: lastName, emailAddress: email))
                 
-                strongSelf.navigationController?.dismiss(animated: true, completion: nil)
+                FirebaseAuth.Auth.auth().createUser(withEmail: email, password: confirmPass, completion: { [weak self] authResult, error in
+                    
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        strongSelf.spinner.dismiss()
+                    }
+                    
+                    guard authResult != nil, error == nil else {
+                        self?.alertUserRegisterError(message: "Can not create account with this email!")
+                        print("Error creating user!")
+                        return
+                    }
+                    
+                    UserDefaults.standard.setValue(email, forKey: "email")
+                    UserDefaults.standard.setValue("\(firstName) \(lastName)", forKey: "name")
+                    
+                    let chatUser = ChatAppUser(firstName: firstName, lastName: lastName, emailAddress: email)
+                    DatabaseManager.shared.insertUser(with: chatUser, completetion: { success in
+                        if success {
+                            //Upload image
+                            guard let image = strongSelf.imageView.image, let data = image.pngData() else {
+                                return
+                            }
+                            let fileName = chatUser.profilePictureFileName
+                            StorageManager.shared.uploadProfilePicture(with: data, fileName: fileName, completion: { result in
+                                switch result {
+                                case .success(let downloadURL):
+                                    UserDefaults.standard.set(downloadURL, forKey: "profile_picture_url")
+                                    print(downloadURL)
+                                case .failure(let error):
+                                    print("Storage manager error: \(error)")
+                                }
+                            })
+                        }
+                    })
+                    
+                    strongSelf.navigationController?.dismiss(animated: true, completion: nil)
+                })
             })
-        })
+        }
     }
     
     func alertUserRegisterError(message: String = "Please enter all information to create a new account.") {
@@ -280,7 +318,7 @@ extension RegisterViewController: UIImagePickerControllerDelegate, UINavigationC
             return
         }
         
-        self.imageView.image = selectedImage
+        imageView.image = selectedImage
     }
     
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
